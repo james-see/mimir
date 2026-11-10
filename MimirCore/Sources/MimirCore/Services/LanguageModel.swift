@@ -22,7 +22,7 @@ public struct LLMConfig: Sendable, Equatable {
 
     public init(
         baseURL: URL = URL(string: "http://localhost:11434/v1")!,
-        model: String = "qwen3:4b-instruct",
+        model: String = "huihui_ai/qwen3-abliterated:4b-instruct-2507-q4_K_M",
         apiKey: String? = nil,
         temperature: Double = 0.7
     ) {
