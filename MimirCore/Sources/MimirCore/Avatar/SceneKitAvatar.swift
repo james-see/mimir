@@ -305,11 +305,14 @@ public final class SceneKitAvatar: NSObject, AvatarRenderer, SCNSceneRendererDel
             catchNode.position = SCNVector3(0.007, 0.007, 0.011)
             pupilNode.addChildNode(catchNode)
 
-            // Round spectacle lens + temple arm.
+            // Round spectacle lens + temple arm. SCNTorus lies in the XZ
+            // plane (hole axis = Y) — tip it forward so the ring faces +Z
+            // (the camera), or it reads as a horizontal line edge-on.
             let lens = SCNTorus(ringRadius: 0.038, pipeRadius: 0.0032)
             lens.materials = [lensMetal]
             let lensNode = SCNNode(geometry: lens)
             lensNode.position = SCNVector3(CGFloat(side) * 0.058, 0.126, 0.158)
+            lensNode.eulerAngles = SCNVector3(CGFloat.pi / 2, 0, 0)
             headRoot.addChildNode(lensNode)
 
             let arm = SCNCapsule(capRadius: 0.003, height: 0.13)
