@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Resolves the on-disk locations of the Kokoro model assets and, when they
@@ -12,8 +13,11 @@ public struct ModelBootstrap: Sendable {
         public let voicesURL: URL
     }
 
-    public enum BootstrapError: Error, Equatable {
+    public enum BootstrapError: Error, Equatable, LocalizedError {
         case downloadFailed(String)
+        public var errorDescription: String? {
+            switch self { case .downloadFailed(let message): message }
+        }
     }
 
     public static let modelFileName = "kokoro-v1_0.safetensors"
@@ -76,8 +80,6 @@ public struct ModelBootstrap: Sendable {
     }
 
     private func download(_ source: URL, to destination: URL, expectedBytes: Int) async throws {
-        let temp = destination.appendingPathComponent("partial")
-        defer { try? FileManager.default.removeItem(at: temp) }
         let (data, response) = try await URLSession.shared.data(from: source)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw BootstrapError.downloadFailed("HTTP \(http.statusCode) for \(source.lastPathComponent)")
@@ -87,7 +89,10 @@ public struct ModelBootstrap: Sendable {
                 "\(source.lastPathComponent): got \(data.count) bytes, expected \(expectedBytes)"
             )
         }
-        try data.write(to: temp)
-        try FileManager.default.moveItem(at: temp, to: destination)
+        if destination.lastPathComponent == Self.modelFileName {
+            let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            guard digest == Self.modelSHA256 else { throw BootstrapError.downloadFailed("Kokoro checksum mismatch; download was not installed.") }
+        }
+        try data.write(to: destination, options: .atomic)
     }
 }

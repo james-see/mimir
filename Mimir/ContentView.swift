@@ -2,7 +2,7 @@ import MimirCore
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var vm = ConversationViewModel()
+    @ObservedObject var vm: ConversationViewModel
 
     var body: some View {
         HStack(spacing: 0) {
@@ -13,6 +13,13 @@ struct ContentView: View {
         .frame(minWidth: 900, minHeight: 600)
         .background(Color(white: 0.05))
         .preferredColorScheme(.dark)
+        .toolbar {
+            ToolbarItemGroup {
+                Button("New conversation", systemImage: "square.and.pencil") { vm.newConversation() }
+                    .disabled(vm.isResponding || !vm.ready)
+                SettingsLink { Label("Settings", systemImage: "gearshape") }
+            }
+        }
     }
 
     // MARK: - Left: the head
@@ -175,5 +182,5 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView()
+    ContentView(vm: ConversationViewModel())
 }

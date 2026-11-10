@@ -54,6 +54,17 @@ public actor ConversationEngine {
         self.voice = voice
     }
 
+    public func configure(_ config: LLMConfig, persona: String, voice: String?) {
+        llmConfig = config
+        self.persona = persona
+        self.voice = voice
+    }
+
+    public func restoreHistory(_ messages: [ChatMessage]) {
+        guard state != .thinking && state != .speaking else { return }
+        history = messages.filter { $0.role != .system }
+    }
+
     public func setLLMConfig(_ config: LLMConfig) {
         llmConfig = config
     }

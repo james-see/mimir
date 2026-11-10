@@ -22,6 +22,42 @@ final class ConversationViewModel: ObservableObject {
     @Published private(set) var micEnabled = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var voiceNote: String?
+    @Published private(set) var availableVoices: [String] = []
+    private let transcriptStore = TranscriptStore()
+    private var conversationID = UUID()
+    private var lastSavedMessages: [ChatMessage] = []
+    private var preferences = TeacherSettings.load()
+    var isResponding: Bool { state == .thinking || state == .speaking }
+
+    func applySettings(_ settings: TeacherSettings, apiKey: String) async throws {
+        let config = try settings.config(apiKey: apiKey)
+        try APIKeyStore.save(apiKey)
+        try settings.save()
+        preferences = settings
+        await engine?.configure(config, persona: settings.persona, voice: availableVoices.isEmpty ? nil : settings.voice)
+    }
+
+    func showSavedFiles() {
+        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Mimir")
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(directory)
+    }
+
+    func newConversation() {
+        guard !isResponding else { return }
+        Task {
+            await engine?.restoreHistory([])
+            conversationID = UUID()
+            lastSavedMessages = []
+            if preferences.saveConversations {
+                do { try await transcriptStore.append(.init(id: conversationID, messages: [])) }
+                catch { errorMessage = "Could not save new conversation: \(error.localizedDescription)" }
+            }
+            turns = []
+            streamingAssistant = ""
+            lastStreamedLength = 0
+        }
+    }
 
     let avatar = SceneKitAvatar()
 
@@ -33,11 +69,12 @@ final class ConversationViewModel: ObservableObject {
     private var micSuspended = false
     private var lastStreamedLength = 0
 
-    init(config: LLMConfig = LLMConfig(), autoDownloadVoice: Bool = false) {
+    init(config: LLMConfig? = nil, autoDownloadVoice: Bool = true) {
+        let resolved = config ?? (try? preferences.config(apiKey: APIKeyStore.read())) ?? LLMConfig()
         player.onScheduled = { [avatar] _, cues, start in
             avatar.setVisemes(cues, startingAt: start)
         }
-        Task { await bootstrap(config: config, autoDownloadVoice: autoDownloadVoice) }
+        Task { await bootstrap(config: resolved, autoDownloadVoice: autoDownloadVoice) }
     }
 
     // MARK: - Bootstrap
@@ -46,11 +83,16 @@ final class ConversationViewModel: ObservableObject {
         let synthesizer: any SpeechSynthesizer
         var assets = ModelBootstrap().existingAssets()
         if assets == nil, autoDownloadVoice {
-            assets = try? await ModelBootstrap().ensureAssets()
+            voiceNote = "Preparing Kokoro voice model (first download is about 326 MiB)…"
+            do { assets = try await ModelBootstrap().ensureAssets() }
+            catch { errorMessage = "Voice download failed: \(error.localizedDescription). Using the system voice." }
         }
         if let assets,
            let kokoro = try? KokoroSynthesizer(modelURL: assets.modelURL, voicesURL: assets.voicesURL) {
+            voiceNote = "Warming up voice…"
+            availableVoices = await kokoro.availableVoices
             await kokoro.warmUp()
+            voiceNote = nil
             synthesizer = kokoro
         } else {
             synthesizer = SystemSynthesizer()
@@ -64,7 +106,9 @@ final class ConversationViewModel: ObservableObject {
             synthesizer: synthesizer,
             visemes: DefaultVisemeEngine(),
             player: player,
-            config: config
+            config: config,
+            persona: preferences.persona,
+            voice: availableVoices.isEmpty ? nil : preferences.voice
         )
         self.engine = engine
 
@@ -82,6 +126,16 @@ final class ConversationViewModel: ObservableObject {
                 }
             }
         )
+        if preferences.saveConversations {
+            do {
+                if let saved = try await transcriptStore.load().last {
+                    conversationID = saved.id
+                    lastSavedMessages = saved.messages
+                    await engine.restoreHistory(saved.messages)
+                    turns = saved.messages.map { Turn(role: $0.role, text: $0.content) }
+                }
+            } catch { errorMessage = "Could not restore conversation: \(error.localizedDescription)" }
+        }
         ready = true
     }
 
@@ -108,6 +162,12 @@ final class ConversationViewModel: ObservableObject {
             turns = history.map { Turn(role: $0.role, text: $0.content) }
             streamingAssistant = ""
             lastStreamedLength = 0
+            if preferences.saveConversations, history != lastSavedMessages {
+                do {
+                    try await transcriptStore.append(.init(id: conversationID, messages: history))
+                    lastSavedMessages = history
+                } catch { errorMessage = "Could not save conversation: \(error.localizedDescription)" }
+            }
         }
     }
 
