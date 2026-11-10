@@ -1,0 +1,40 @@
+name: Mimir
+options:
+  bundleIdPrefix: us.jamescampbell
+  createIntermediateGroups: true
+packages:
+  MimirCore:
+    path: MimirCore
+targets:
+  Mimir:
+    type: application
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Mimir
+        excludes:
+          - Info.plist
+    info:
+      path: Mimir/Info.plist
+      properties:
+        CFBundleName: Mimir
+        CFBundleDisplayName: Mimir
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSMinimumSystemVersion: "15.0"
+        NSHumanReadableCopyright: "© 2026 James Campbell. MIT License."
+        NSMicrophoneUsageDescription: "Mimir listens only while you ask questions."
+        NSPrincipalClass: NSApplication
+        NSSupportsAutomaticTermination: true
+        NSSupportsSuddenTermination: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: us.jamescampbell.mimir
+        PRODUCT_NAME: Mimir
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        ENABLE_HARDENED_RUNTIME: false
+    dependencies:
+      - package: MimirCore
+        product: MimirCore
