@@ -38,5 +38,9 @@ let package = Package(
             name: "MimirE2E",
             dependencies: ["MimirCore"]
         ),
+        .executableTarget(
+            name: "MimirHeadshot",
+            dependencies: ["MimirCore"]
+        ),
     ]
 )

@@ -1,6 +1,6 @@
 import SceneKit
 
-extension SCNNode {
+public extension SCNNode {
     /// All nodes below this one, recursively (SceneKit has no built-in
     /// flat list; `enumerateChildNodes` walks the subtree).
     var descendants: [SCNNode] {
@@ -87,8 +87,9 @@ public final class SceneKitAvatar: NSObject, AvatarRenderer, SCNSceneRendererDel
         tick(at: time)
     }
 
-    /// Visible for testing. Applies one frame of animation.
-    func tick(at time: TimeInterval) {
+    /// One animation frame. Called by SceneKit on the render thread via the
+    /// delegate; `public` so dev tools (MimirHeadshot) can drive it offscreen.
+    public func tick(at time: TimeInterval) {
         lock.lock()
         defer { lock.unlock() }
 
@@ -130,8 +131,9 @@ public final class SceneKitAvatar: NSObject, AvatarRenderer, SCNSceneRendererDel
             morphNode?.morpher?.setWeight(CGFloat(value), forTargetNamed: key)
         }
 
-        // --- Placeholder jaw drive
-        let desiredJaw = VisemeMorphMap.jawWeight(for: desiredViseme) * desiredWeight * 0.5
+        // --- Placeholder jaw drive (subtle swing: overshooting sinks the
+        // mouth into the beard silhouette and reads as a shadow, not speech)
+        let desiredJaw = VisemeMorphMap.jawWeight(for: desiredViseme) * desiredWeight * 0.3
         displayedJaw += (desiredJaw - displayedJaw) * ease
         jawNode?.eulerAngles.x = CGFloat(displayedJaw)
         for eye in eyeNodes {
@@ -159,21 +161,21 @@ public final class SceneKitAvatar: NSObject, AvatarRenderer, SCNSceneRendererDel
         camera.zFar = 10
         let cameraNode = SCNNode()
         cameraNode.camera = camera
-        cameraNode.position = SCNVector3(0, 0.1, 1.05)
-        cameraNode.look(at: SCNVector3(0, 0.05, 0))
+        cameraNode.position = SCNVector3(0, 0.08, 0.8)
+        cameraNode.look(at: SCNVector3(0, 0.03, 0))
         scene.rootNode.addChildNode(cameraNode)
 
         let ambient = SCNLight()
         ambient.type = .ambient
-        ambient.intensity = 350
-        ambient.color = NSColor(white: 0.9, alpha: 1)
+        ambient.intensity = 55
+        ambient.color = NSColor(white: 0.92, alpha: 1)
         let ambientNode = SCNNode()
         ambientNode.light = ambient
         scene.rootNode.addChildNode(ambientNode)
 
         let key = SCNLight()
         key.type = .omni
-        key.intensity = 900
+        key.intensity = 160
         key.color = NSColor(red: 1, green: 0.96, blue: 0.9, alpha: 1)
         let keyNode = SCNNode()
         keyNode.light = key
@@ -182,7 +184,7 @@ public final class SceneKitAvatar: NSObject, AvatarRenderer, SCNSceneRendererDel
 
         let fill = SCNLight()
         fill.type = .omni
-        fill.intensity = 350
+        fill.intensity = 60
         fill.color = NSColor(red: 0.75, green: 0.82, blue: 1, alpha: 1)
         let fillNode = SCNNode()
         fillNode.light = fill
@@ -201,22 +203,30 @@ public final class SceneKitAvatar: NSObject, AvatarRenderer, SCNSceneRendererDel
         scene.rootNode.addChildNode(headRoot)
     }
 
-    /// The build-today head: stylized primitives with a hinged jaw and
-    /// squishable eyes. Keeps every upstream system (visemes, states, idle)
-    /// fully exercisable until the realistic asset lands.
+    /// The build-today head: a characterful wise-old-teacher face in
+    /// primitives — big expressive eyes with catchlights, bushy brows, round
+    /// spectacles, graying hair and beard. The hinged jaw, beard and mustache
+    /// move as one unit when he talks.
     private func loadPlaceholderHead() {
-        func material(_ color: NSColor, roughness: CGFloat = 0.85) -> SCNMaterial {
+        func material(_ color: NSColor, shininess: CGFloat = 10, metallic: CGFloat = 0) -> SCNMaterial {
             let material = SCNMaterial()
             material.diffuse.contents = color
-            material.roughness.contents = roughness
-            material.lightingModel = .physicallyBased
+            // Blinn keeps flat saturated colors readable under direct light —
+            // physicallyBased was specular-blowing the matte zones to white.
+            material.lightingModel = .blinn
+            material.shininess = shininess
+            if metallic > 0 {
+                material.metalness.contents = metallic
+            }
             return material
         }
 
-        let skin = material(NSColor(red: 0.85, green: 0.66, blue: 0.55, alpha: 1))
-        let hair = material(NSColor(red: 0.22, green: 0.16, blue: 0.12, alpha: 1))
-        let white = material(NSColor.white, roughness: 0.3)
-        let dark = material(NSColor(red: 0.08, green: 0.06, blue: 0.05, alpha: 1))
+        let skin = material(NSColor(red: 0.87, green: 0.68, blue: 0.56, alpha: 1))
+        let blush = material(NSColor(red: 0.95, green: 0.62, blue: 0.55, alpha: 1))
+        let grayHair = material(NSColor(red: 0.62, green: 0.6, blue: 0.6, alpha: 1))
+        let white = material(NSColor.white, shininess: 60)
+        let dark = material(NSColor(red: 0.07, green: 0.05, blue: 0.04, alpha: 1))
+        let lensMetal = material(NSColor(red: 0.15, green: 0.15, blue: 0.17, alpha: 1), shininess: 70, metallic: 0.9)
         let cloth = material(NSColor(red: 0.16, green: 0.2, blue: 0.32, alpha: 1))
 
         // Shoulders + neck.
@@ -227,30 +237,30 @@ public final class SceneKitAvatar: NSObject, AvatarRenderer, SCNSceneRendererDel
         shouldersNode.scale = SCNVector3(1.6, 0.6, 0.8)
         scene.rootNode.addChildNode(shouldersNode)
 
-        let neck = SCNCylinder(radius: 0.045, height: 0.09)
+        let neck = SCNCylinder(radius: 0.05, height: 0.09)
         neck.materials = [skin]
         let neckNode = SCNNode(geometry: neck)
         neckNode.position = SCNVector3(0, -0.075, 0)
         headRoot.addChildNode(neckNode)
         scene.rootNode.addChildNode(headRoot)
 
-        // Cranium.
+        // Cranium — a touch wide and soft for the cartoon read.
         let skull = SCNSphere(radius: 0.16)
         skull.segmentCount = 48
         skull.materials = [skin]
         let skullNode = SCNNode(geometry: skull)
         skullNode.name = "placeholder_head"
         skullNode.position = SCNVector3(0, 0.1, 0)
-        skullNode.scale = SCNVector3(1, 1.12, 0.98)
+        skullNode.scale = SCNVector3(1.03, 1.08, 0.98)
         headRoot.addChildNode(skullNode)
 
-        // Hair mass behind/above the face line.
-        let hairCap = SCNSphere(radius: 0.155)
+        // Graying hair swept up and back — forehead visible.
+        let hairCap = SCNSphere(radius: 0.148)
         hairCap.segmentCount = 48
-        hairCap.materials = [hair]
+        hairCap.materials = [grayHair]
         let hairNode = SCNNode(geometry: hairCap)
-        hairNode.position = SCNVector3(0, 0.155, -0.025)
-        hairNode.scale = SCNVector3(1.02, 1.05, 0.99)
+        hairNode.position = SCNVector3(0, 0.175, -0.035)
+        hairNode.scale = SCNVector3(1.05, 0.9, 1.0)
         headRoot.addChildNode(hairNode)
 
         // Ears.
@@ -258,64 +268,115 @@ public final class SceneKitAvatar: NSObject, AvatarRenderer, SCNSceneRendererDel
             let ear = SCNSphere(radius: 0.028)
             ear.materials = [skin]
             let earNode = SCNNode(geometry: ear)
-            earNode.position = SCNVector3(CGFloat(side) * 0.158, 0.1, 0)
+            earNode.position = SCNVector3(CGFloat(side) * 0.163, 0.095, 0)
             earNode.scale = SCNVector3(0.4, 1, 0.7)
             headRoot.addChildNode(earNode)
         }
 
-        // Eyes (white + pupil), brows.
+        // Bushy gray brows, lifted toward the outer ends.
         for side: Float in [-1, 1] {
-            let eye = SCNSphere(radius: 0.024)
-            eye.materials = [white]
-            let eyeNode = SCNNode(geometry: eye)
-            eyeNode.name = "\(Self.placeholderEyePrefix)\(side < 0 ? "_l" : "_r")"
-            eyeNode.position = SCNVector3(CGFloat(side) * 0.055, 0.125, 0.142)
-            headRoot.addChildNode(eyeNode)
-            eyeNodes.append(eyeNode)
-
-            let pupil = SCNSphere(radius: 0.0105)
-            pupil.materials = [dark]
-            let pupilNode = SCNNode(geometry: pupil)
-            pupilNode.position = SCNVector3(0, 0, 0.0165)
-            eyeNode.addChildNode(pupilNode)
-
-            let brow = SCNCapsule(capRadius: 0.006, height: 0.045)
-            brow.materials = [hair]
+            let brow = SCNCapsule(capRadius: 0.009, height: 0.052)
+            brow.materials = [grayHair]
             let browNode = SCNNode(geometry: brow)
-            browNode.position = SCNVector3(CGFloat(side) * 0.058, 0.168, 0.148)
-            browNode.eulerAngles = SCNVector3(0, 0, CGFloat.pi / 2)
+            browNode.position = SCNVector3(CGFloat(side) * 0.06, 0.178, 0.145)
+            browNode.eulerAngles = SCNVector3(0, CGFloat(side) * -0.12, CGFloat.pi / 2)
             headRoot.addChildNode(browNode)
         }
 
+        // Big eyes, pupils, catchlights — the cartoon shortcut to "alive".
+        for side: Float in [-1, 1] {
+            let eye = SCNSphere(radius: 0.031)
+            eye.materials = [white]
+            let eyeNode = SCNNode(geometry: eye)
+            eyeNode.name = "\(Self.placeholderEyePrefix)\(side < 0 ? "_l" : "_r")"
+            eyeNode.position = SCNVector3(CGFloat(side) * 0.058, 0.125, 0.138)
+            headRoot.addChildNode(eyeNode)
+            eyeNodes.append(eyeNode)
+
+            let pupil = SCNSphere(radius: 0.014)
+            pupil.materials = [dark]
+            let pupilNode = SCNNode(geometry: pupil)
+            pupilNode.position = SCNVector3(0, 0, 0.021)
+            eyeNode.addChildNode(pupilNode)
+
+            let catchlight = SCNSphere(radius: 0.0055)
+            catchlight.materials = [white]
+            let catchNode = SCNNode(geometry: catchlight)
+            catchNode.position = SCNVector3(0.007, 0.007, 0.011)
+            pupilNode.addChildNode(catchNode)
+
+            // Round spectacle lens + temple arm.
+            let lens = SCNTorus(ringRadius: 0.038, pipeRadius: 0.0032)
+            lens.materials = [lensMetal]
+            let lensNode = SCNNode(geometry: lens)
+            lensNode.position = SCNVector3(CGFloat(side) * 0.058, 0.126, 0.158)
+            headRoot.addChildNode(lensNode)
+
+            let arm = SCNCapsule(capRadius: 0.003, height: 0.13)
+            arm.materials = [lensMetal]
+            let armNode = SCNNode(geometry: arm)
+            armNode.position = SCNVector3(CGFloat(side) * 0.135, 0.128, 0.09)
+            armNode.eulerAngles = SCNVector3(CGFloat.pi / 2, 0, 0)
+            headRoot.addChildNode(armNode)
+        }
+
+        // Spectacle bridge across the nose.
+        let bridge = SCNCapsule(capRadius: 0.0032, height: 0.04)
+        bridge.materials = [lensMetal]
+        let bridgeNode = SCNNode(geometry: bridge)
+        bridgeNode.position = SCNVector3(0, 0.126, 0.158)
+        bridgeNode.eulerAngles = SCNVector3(0, 0, CGFloat.pi / 2)
+        headRoot.addChildNode(bridgeNode)
+
         // Nose.
-        let nose = SCNSphere(radius: 0.02)
+        let nose = SCNSphere(radius: 0.021)
         nose.materials = [skin]
         let noseNode = SCNNode(geometry: nose)
-        noseNode.position = SCNVector3(0, 0.085, 0.16)
-        noseNode.scale = SCNVector3(0.7, 2, 0.8)
+        noseNode.position = SCNVector3(0, 0.088, 0.163)
+        noseNode.scale = SCNVector3(0.72, 1.9, 0.75)
         headRoot.addChildNode(noseNode)
 
-        // Jaw: hinged at the hinges of the mandible — pivot near the temples,
-        // geometry hanging below-forward so rotating opens the mouth.
+        // Cheek blush.
+        for side: Float in [-1, 1] {
+            let cheek = SCNSphere(radius: 0.021)
+            cheek.materials = [blush]
+            let cheekNode = SCNNode(geometry: cheek)
+            cheekNode.position = SCNVector3(CGFloat(side) * 0.093, 0.062, 0.128)
+            cheekNode.scale = SCNVector3(1.15, 0.75, 0.4)
+            headRoot.addChildNode(cheekNode)
+        }
+
+        // Jaw + beard + mustache: one hinged unit under the face.
         let jawPivot = SCNNode()
         jawPivot.name = Self.placeholderJawNodeName
-        jawPivot.position = SCNVector3(0, 0.02, 0.02)
+        jawPivot.position = SCNVector3(0, 0.03, 0.02)
         headRoot.addChildNode(jawPivot)
 
-        let chin = SCNSphere(radius: 0.09)
-        chin.segmentCount = 32
-        chin.materials = [skin]
-        let chinNode = SCNNode(geometry: chin)
-        chinNode.position = SCNVector3(0, -0.015, 0.055)
-        chinNode.scale = SCNVector3(0.85, 0.75, 0.8)
-        jawPivot.addChildNode(chinNode)
+        let beard = SCNSphere(radius: 0.128)
+        beard.segmentCount = 32
+        beard.materials = [grayHair]
+        let beardNode = SCNNode(geometry: beard)
+        // Protrude past the skull's front surface so the beard has its own read,
+        // and hang it low so the mouth opens BELOW it, not inside it.
+        beardNode.position = SCNVector3(0, -0.085, 0.068)
+        beardNode.scale = SCNVector3(1.02, 0.95, 0.82)
+        jawPivot.addChildNode(beardNode)
 
-        let mouth = SCNCapsule(capRadius: 0.009, height: 0.06)
+        let mouth = SCNCapsule(capRadius: 0.016, height: 0.08)
         mouth.materials = [dark]
         let mouthNode = SCNNode(geometry: mouth)
-        mouthNode.position = SCNVector3(0, 0.008, 0.125)
+        mouthNode.position = SCNVector3(0, -0.024, 0.17)
         mouthNode.eulerAngles = SCNVector3(0, 0, CGFloat.pi / 2)
         jawPivot.addChildNode(mouthNode)
+
+        // Mustache stays on the FACE (not the jaw) — when Mimir opens his
+        // mouth, the gap between mustache and mouth is what reads as open.
+        let mustache = SCNCapsule(capRadius: 0.013, height: 0.088)
+        mustache.materials = [grayHair]
+        let stacheNode = SCNNode(geometry: mustache)
+        stacheNode.position = SCNVector3(0, 0.038, 0.165)
+        stacheNode.eulerAngles = SCNVector3(0, 0, CGFloat.pi / 2)
+        headRoot.addChildNode(stacheNode)
 
         jawNode = jawPivot
     }

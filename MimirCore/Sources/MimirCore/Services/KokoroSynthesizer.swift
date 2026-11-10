@@ -22,7 +22,7 @@ public actor KokoroSynthesizer: SpeechSynthesizer {
         }
     }
 
-    public static let defaultVoice = "af_heart"
+    public static let defaultVoice = "bm_george"  // British male — the teacher voice
 
     public nonisolated let sampleRate: Double
 
