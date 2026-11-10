@@ -6,10 +6,13 @@ public struct PhonemeCue: Sendable, Equatable {
     /// Seconds from the start of the audio buffer.
     public let time: TimeInterval
     public let phoneme: String
+    /// Seconds from the start of the buffer, when known (Kokoro word tokens).
+    public let end: TimeInterval?
 
-    public init(time: TimeInterval, phoneme: String) {
+    public init(time: TimeInterval, phoneme: String, end: TimeInterval? = nil) {
         self.time = time
         self.phoneme = phoneme
+        self.end = end
     }
 }
 
