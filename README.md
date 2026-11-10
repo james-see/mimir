@@ -26,7 +26,7 @@ Every stage is a Swift protocol (`LanguageModel`, `SpeechRecognizer`, `SpeechSyn
 
 - macOS 15+, Apple Silicon recommended
 - Xcode 26+ and [XcodeGen](https://github.com/yonsm/XcodeGen) (`brew install xcodegen`)
-- [Ollama](https://ollama.com) running locally for the default brain (`ollama pull qwen2.5:7b`)
+- [Ollama](https://ollama.com) running locally for the default brain (`ollama pull qwen3:4b-instruct`)
 
 ## Build & run
 
