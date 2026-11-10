@@ -48,6 +48,12 @@ public actor KokoroSynthesizer: SpeechSynthesizer {
         voices.keys.map { String($0.split(separator: ".").first ?? "") }.sorted()
     }
 
+    /// Prime Misaki G2P + MLX kernels so the first real sentence doesn't pay
+    /// their one-time compilation cost (measured: ~3 s on the critical path).
+    public func warmUp() async {
+        _ = try? await synthesize("Mimir ready.", voice: nil)
+    }
+
     public func synthesize(_ text: String, voice: String?) async throws -> SynthesizedSpeech {
         let name = voice ?? fallbackVoice
         let key = name.hasSuffix(".npy") ? name : name + ".npy"

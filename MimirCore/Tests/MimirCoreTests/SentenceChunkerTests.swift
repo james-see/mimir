@@ -83,4 +83,25 @@ final class SentenceChunkerTests: XCTestCase {
         XCTAssertNil(chunker.consume(" forty-two"))
         XCTAssertEqual(chunker.consume("."), "The answer is forty-two.")
     }
+
+    func testClauseFallbackSplitsLongRunningSentence() {
+        var chunker = SentenceChunker()
+        let prefix = String(repeating: "lorem ipsum ", count: 7) + "dolor sit, "
+        XCTAssertTrue(prefix.count > 80)
+        XCTAssertEqual(chunker.consume(prefix + "and it goes on."), "lorem ipsum lorem ipsum lorem ipsum lorem ipsum lorem ipsum lorem ipsum lorem ipsum dolor sit,")
+        XCTAssertEqual(chunker.flush(), "and it goes on.")
+    }
+
+    func testClauseFallbackIgnoredForShortBuffers() {
+        var chunker = SentenceChunker()
+        XCTAssertNil(chunker.consume("Sure, I can"))
+        XCTAssertEqual(chunker.consume(" explain."), "Sure, I can explain.")
+    }
+
+    func testDigitGroupingCommaNotClauseBoundary() {
+        var chunker = SentenceChunker()
+        let long = String(repeating: "value ", count: 16) // > 80 chars
+        XCTAssertNil(chunker.consume(long + "costs 1,000 dollars and counting"))
+        XCTAssertEqual(chunker.consume(" forever."), long + "costs 1,000 dollars and counting forever.")
+    }
 }

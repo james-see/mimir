@@ -48,6 +48,7 @@ final class ConversationViewModel: ObservableObject {
         }
         if let assets,
            let kokoro = try? KokoroSynthesizer(modelURL: assets.modelURL, voicesURL: assets.voicesURL) {
+            await kokoro.warmUp()
             synthesizer = kokoro
         } else {
             synthesizer = SystemSynthesizer()

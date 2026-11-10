@@ -15,12 +15,17 @@ import Foundation
 /// 4. Mid-word periods ("file.txt") are not boundaries.
 /// 5. `minChunkLength` merges runt sentences into their successor, so the
 ///    synthesizer isn't fed one-word chunks. `flush()` ignores it.
+/// 6. Clause fallback: a long sentence that still hasn't ended after
+///    `clauseMinLength` characters splits at a comma/semicolon/colon followed
+///    by whitespace — the single-sentence answer shouldn't stall the voice.
 public struct SentenceChunker: Sendable {
     public var minChunkLength: Int
+    public var clauseMinLength: Int
 
     private var buffer = ""
 
     private static let terminators: Set<Character> = [".", "!", "?", "…"]
+    private static let weakBoundaries: Set<Character> = [",", ";", ":", "—"]
     private static let closers: Set<Character> = [
         "\"", "'", "\u{201D}", "\u{2019}", ")", "]", "\u{00BB}",
     ]
@@ -29,8 +34,9 @@ public struct SentenceChunker: Sendable {
         "e.g", "i.e", "fig", "inc", "ltd", "u.s", "u.k", "approx",
     ]
 
-    public init(minChunkLength: Int = 1) {
+    public init(minChunkLength: Int = 1, clauseMinLength: Int = 80) {
         self.minChunkLength = minChunkLength
+        self.clauseMinLength = clauseMinLength
     }
 
     /// Feed one stream token. Returns a completed chunk, or nil to keep waiting.
@@ -64,6 +70,18 @@ public struct SentenceChunker: Sendable {
         var i = start
         while i < buffer.endIndex {
             let c0 = buffer[i]
+
+            // Clause fallback: weak punctuation splits only a buffer that's
+            // been waiting a long time for a sentence end.
+            if Self.weakBoundaries.contains(c0) {
+                let next = buffer.index(after: i)
+                let confirmed = next < buffer.endIndex && buffer[next].isWhitespace
+                if confirmed, buffer.distance(from: start, to: i) + 1 >= clauseMinLength {
+                    return next
+                }
+                i = next
+                continue
+            }
 
             if c0 == "\n" {
                 let next = buffer.index(after: i)
