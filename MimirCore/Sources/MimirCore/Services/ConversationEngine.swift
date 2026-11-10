@@ -21,6 +21,10 @@ public actor ConversationEngine {
     public var voice: String?
     public var onStateChange: (@Sendable (AvatarState) -> Void)?
     public var onAssistantToken: (@Sendable (String) -> Void)?
+    /// Ordering-safe streaming display: each call carries the full text so
+    /// far, so UI can just replace. (A dropped/out-of-order callback never
+    /// corrupts the transcript.)
+    public var onAssistantText: (@Sendable (String) -> Void)?
     public var onError: (@Sendable (Error) -> Void)?
 
     private let llm: any LanguageModel
@@ -58,10 +62,12 @@ public actor ConversationEngine {
     public func setHandlers(
         state: (@Sendable (AvatarState) -> Void)? = nil,
         token: (@Sendable (String) -> Void)? = nil,
+        text: (@Sendable (String) -> Void)? = nil,
         error: (@Sendable (Error) -> Void)? = nil
     ) {
         if let state { onStateChange = state }
         if let token { onAssistantToken = token }
+        if let text { onAssistantText = text }
         if let error { onError = error }
     }
 
@@ -111,6 +117,7 @@ public actor ConversationEngine {
                 try Task.checkCancellation()
                 answer += token
                 onAssistantToken?(token)
+                onAssistantText?(answer)
                 if let chunk = chunker.consume(token) {
                     try await speak(chunk)
                 }
@@ -119,7 +126,9 @@ public actor ConversationEngine {
                 try await speak(tail)
             }
             guard id == turnCounter else { return }
-            history.append(ChatMessage(role: .assistant, content: answer))
+            if !answer.isEmpty {
+                history.append(ChatMessage(role: .assistant, content: answer))
+            }
             await player.waitUntilDrained()
             guard id == turnCounter else { return }
             setState(.listening)
