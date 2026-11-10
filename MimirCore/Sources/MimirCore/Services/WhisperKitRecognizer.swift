@@ -29,6 +29,7 @@ public final class WhisperKitRecognizer: SpeechRecognizer, @unchecked Sendable {
     private struct MutableState {
         var engine: AVAudioEngine?
         var segmenter: UtteranceSegmenter
+        var gate = RecognitionGate()
     }
 
     private let model: String
@@ -92,6 +93,15 @@ public final class WhisperKitRecognizer: SpeechRecognizer, @unchecked Sendable {
         engine?.inputNode.removeTap(onBus: 0)
     }
 
+    /// Half-duplex input: keep the device/model warm, but discard microphone
+    /// samples and stale decodes while the assistant owns the conversation.
+    public func setSuspended(_ suspended: Bool) {
+        state.withLock {
+            $0.gate.setSuspended(suspended)
+            $0.segmenter.reset()
+        }
+    }
+
     // MARK: - Internals
 
     /// Runs on the realtime audio thread — keep it cheap: convert, measure,
@@ -101,6 +111,7 @@ public final class WhisperKitRecognizer: SpeechRecognizer, @unchecked Sendable {
         converter: AVAudioConverter,
         targetFormat: AVAudioFormat
     ) {
+        guard !state.withLock({ $0.gate.suspended }) else { return }
         let capacity = AVAudioFrameCount(
             ceil(Double(buffer.frameLength) * targetFormat.sampleRate / buffer.format.sampleRate) + 64
         )
@@ -119,7 +130,10 @@ public final class WhisperKitRecognizer: SpeechRecognizer, @unchecked Sendable {
         for sample in samples { sum += sample * sample }
         let rms = (sum / Float(count)).squareRoot()
 
-        let events = state.withLock { $0.segmenter.process(rms: rms, samples: samples) }
+        let (events, generation) = state.withLock { state in
+            let events = state.gate.suspended ? [] : state.segmenter.process(rms: rms, samples: samples)
+            return (events, state.gate.generation)
+        }
 
         for event in events {
             switch event {
@@ -130,7 +144,7 @@ public final class WhisperKitRecognizer: SpeechRecognizer, @unchecked Sendable {
                 Task { [engineBox, continuation] in
                     do {
                         let text = try await engineBox.transcribe(audio)
-                        if !text.isEmpty {
+                        if !text.isEmpty, self.state.withLock({ $0.gate.accepts(generation) }) {
                             continuation.yield(Transcription(text: text, isFinal: true))
                         }
                     } catch {

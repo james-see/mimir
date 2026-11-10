@@ -29,6 +29,8 @@ final class ConversationViewModel: ObservableObject {
     private var engine: ConversationEngine?
     private var recognizer: WhisperKitRecognizer?
     private var listenTask: Task<Void, Never>?
+    private var resumeMicTask: Task<Void, Never>?
+    private var micSuspended = false
     private var lastStreamedLength = 0
 
     init(config: LLMConfig = LLMConfig(), autoDownloadVoice: Bool = false) {
@@ -87,6 +89,19 @@ final class ConversationViewModel: ObservableObject {
 
     private func stateDidChange(_ newState: AvatarState) {
         state = newState
+        resumeMicTask?.cancel()
+        if newState == .thinking || newState == .speaking {
+            suspendMic()
+        } else {
+            // Let the last speaker sound decay before accepting a new turn.
+            resumeMicTask = Task { [weak self] in
+                do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
+                guard let self, self.micEnabled,
+                      self.state != .thinking, self.state != .speaking else { return }
+                self.micSuspended = false
+                self.recognizer?.setSuspended(false)
+            }
+        }
         guard newState == .listening, let engine else { return }
         Task {
             let history = await engine.history
@@ -109,6 +124,7 @@ final class ConversationViewModel: ObservableObject {
         guard !text.isEmpty else { return }
         draftInput = ""
         errorMessage = nil
+        suspendMic()
         Task { await engine?.ask(text) }
     }
 
@@ -126,22 +142,20 @@ final class ConversationViewModel: ObservableObject {
         let mic = WhisperKitRecognizer()
         recognizer = mic
         micEnabled = true
+        micSuspended = state == .thinking || state == .speaking
+        mic.setSuspended(micSuspended)
         listenTask = Task { [weak self, engine] in
             guard let self else { return }
             do {
                 try await mic.start()
                 for try await transcription in mic.transcriptionStream() {
                     guard !Task.isCancelled else { break }
+                    guard !self.micSuspended else { continue }
                     if transcription.isFinal {
                         guard !transcription.text.isEmpty else { continue }
                         self.errorMessage = nil
-                        Task { await engine?.ask(transcription.text) }
-                    } else {
-                        // Live speech onset → barge-in on a running answer.
-                        let current = self.state
-                        if current == .speaking || current == .thinking {
-                            self.interrupt()
-                        }
+                        self.suspendMic()
+                        await engine?.ask(transcription.text)
                     }
                 }
             } catch {
@@ -153,7 +167,15 @@ final class ConversationViewModel: ObservableObject {
         }
     }
 
+    private func suspendMic() {
+        resumeMicTask?.cancel()
+        micSuspended = true
+        recognizer?.setSuspended(true)
+    }
+
     private func stopMic() {
+        resumeMicTask?.cancel()
+        micSuspended = false
         listenTask?.cancel()
         listenTask = nil
         recognizer?.stop()

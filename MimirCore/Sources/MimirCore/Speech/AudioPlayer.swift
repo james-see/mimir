@@ -56,7 +56,7 @@ public final class AudioPlayer: SpeechPlayback, @unchecked Sendable {
         onScheduled?(id, visemes, start)
         ensureEngineRunning()
 
-        playerNode.scheduleBuffer(buffer) { [weak self] in
+        playerNode.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
             self?.bufferCompleted(generation: myGeneration)
         }
         playerNode.play()
