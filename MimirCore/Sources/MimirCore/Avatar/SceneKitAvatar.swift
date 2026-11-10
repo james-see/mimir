@@ -29,6 +29,7 @@ public final class SceneKitAvatar: NSObject, AvatarRenderer, SCNSceneRendererDel
     private let headRoot = SCNNode()
     private var morphNode: SCNNode?
     private var jawNode: SCNNode?
+    private var mouthRig: ArticulatedMouth?
     private var eyeNodes: [SCNNode] = []
 
     private let lock = NSLock()
@@ -136,6 +137,7 @@ public final class SceneKitAvatar: NSObject, AvatarRenderer, SCNSceneRendererDel
         let desiredJaw = VisemeMorphMap.jawWeight(for: desiredViseme) * desiredWeight * 0.3
         displayedJaw += (desiredJaw - displayedJaw) * ease
         jawNode?.eulerAngles.x = CGFloat(displayedJaw)
+        mouthRig?.update(viseme: desiredViseme, weight: desiredWeight, ease: ease)
         for eye in eyeNodes {
             eye.scale.y = CGFloat(1 - 0.85 * idle.blinkWeight)
         }
@@ -365,12 +367,10 @@ public final class SceneKitAvatar: NSObject, AvatarRenderer, SCNSceneRendererDel
         beardNode.scale = SCNVector3(1.02, 0.95, 0.82)
         jawPivot.addChildNode(beardNode)
 
-        let mouth = SCNCapsule(capRadius: 0.016, height: 0.08)
-        mouth.materials = [dark]
-        let mouthNode = SCNNode(geometry: mouth)
-        mouthNode.position = SCNVector3(0, -0.024, 0.17)
-        mouthNode.eulerAngles = SCNVector3(0, 0, CGFloat.pi / 2)
-        jawPivot.addChildNode(mouthNode)
+        let mouth = ArticulatedMouth()
+        mouth.root.position = SCNVector3(0, 0.018, 0.205)
+        headRoot.addChildNode(mouth.root)
+        mouthRig = mouth
 
         // Mustache stays on the FACE (not the jaw) — when Mimir opens his
         // mouth, the gap between mustache and mouth is what reads as open.

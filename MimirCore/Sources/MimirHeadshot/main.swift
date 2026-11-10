@@ -113,3 +113,14 @@ speaking.applyState(.speaking)
 speaking.setVisemes([VisemeCue(time: 0, id: .aa, weight: 1)], startingAt: Date().addingTimeInterval(-1))
 for frame in 0..<40 { speaking.tick(at: Double(frame) * 0.016) }
 shot(avatar: speaking, time: 0.64, path: "/tmp/mimir-head-speaking.png")
+
+// Mouth shape contact sheet inputs: same camera, distinct articulation.
+if let directory = ProcessInfo.processInfo.environment["MIMIR_MOUTH_POSES"] {
+    try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+    for viseme in [Viseme.rest, .aa, .oo, .ee, .mbp] {
+        let pose = SceneKitAvatar()
+        pose.setVisemes([VisemeCue(time: 0, id: viseme, weight: 1)], startingAt: Date().addingTimeInterval(-1))
+        for frame in 0..<40 { pose.tick(at: Double(frame) * 0.016) }
+        shot(avatar: pose, time: 0.64, path: directory + "/" + viseme.rawValue + ".png")
+    }
+}
